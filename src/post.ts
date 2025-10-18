@@ -124,7 +124,7 @@ export class Post {
     return (await this.fetch_post_data()).subtitle;
   }
 
-  async get_publish_date(): Promise<string | null | undefined> {
+  async get_post_date(): Promise<string | null | undefined> {
     return (await this.fetch_post_data()).post_date;
   }
 

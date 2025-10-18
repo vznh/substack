@@ -19,10 +19,10 @@ async function fetch_self() {
   // logger.info(posts);
 
   for (const p of posts) {
-    const minimal_post_data: { title?: string, subtitle?: string | null, published?: string, paywalled?: boolean } = {};
+    const minimal_post_data: { title?: string, subtitle?: string | null, posted?: string | null | undefined, paywalled?: boolean } = {};
     minimal_post_data.title = await p.get_title();
     minimal_post_data.subtitle = await p.get_subtitle();
-    minimal_post_data.published = await p.get_publish_date();
+    minimal_post_data.posted = await p.get_post_date();
     minimal_post_data.paywalled = await p.paywalled();
 
     logger.info(minimal_post_data);
