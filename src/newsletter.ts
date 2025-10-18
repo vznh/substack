@@ -1,10 +1,11 @@
 // newsletter
-import { Auth } from "./auth";
+import type { Auth } from "./auth";
 import { Post } from "./post";
 import { User } from "./user";
 import {
   ArchiveResponseSchema,
   RecommendationSchema,
+  type ArchiveResponseItem,
 } from "./schemas/newsletter";
 
 class Newsletter {
@@ -24,7 +25,7 @@ class Newsletter {
     params: Record<string, string>,
     limit?: number,
     page_size = 25,
-  ): Promise<Array<{ canonical_url: string }>> {
+  ): Promise<Array<ArchiveResponseItem>> {
     const results = [];
     let offset = 0;
     let more = true;
@@ -42,10 +43,9 @@ class Newsletter {
 
       if (items?.length === 0) break;
 
-      // Fix canonical URLs for newsletters that return /home/ URLs
+      // handle /home/
       for (const item of items) {
         if (item.canonical_url.includes("substack.com/home/post/")) {
-          // Construct the proper newsletter URL
           const slug = item.slug;
           item.canonical_url = `${this.url}/p/${slug}`;
         }
@@ -121,7 +121,7 @@ class Newsletter {
     const response = await this.request(endpoint);
     const authors = await response.json() as Array<{ handle: string }>;
 
-    return authors.map((author: { handle: string }) => new User(author.handle))
+    return authors.map((author: { handle: string }) => new User(author.handle));
   }
 
   get_base_url(): string {
@@ -130,7 +130,7 @@ class Newsletter {
 
   // override
   toString(): string {
-    return `Newsletter: ${this.url}`
+    return `Newsletter: ${this.url}`;
   }
 
 }

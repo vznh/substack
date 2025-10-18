@@ -32,9 +32,11 @@ const RecommendationSchema = z.object({
 });
 
 type NewsletterMetadata = z.infer<typeof NewsletterMetadataSchema>;
+type ArchiveResponseItem = z.infer<typeof ArchiveResponseSchema>[0];
 
 export {
   type NewsletterMetadata,
+  type ArchiveResponseItem,
   NewsletterMetadataSchema,
   RecommendationSchema,
   ArchiveResponseSchema

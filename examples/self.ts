@@ -1,5 +1,5 @@
 // examples/self
-import { Newsletter, Post, User } from "../src";
+import { Newsletter, Post, User, type PostData } from "../src";
 import { Logger } from "@origranot/ts-logger";
 
 const logger = new Logger();
@@ -16,20 +16,17 @@ async function fetch_self() {
   const posts = await newsletter.get_posts("new", 6);
 
   logger.info("Posts from venh.substack.com:");
-  for (const post of posts) {
-    const title = await post.get_title();
-    const paywalled = await post.paywalled();
-    console.log(`- ${title} ${paywalled ? "(paywalled)" : ""}`);
-  }
+  // logger.info(posts);
 
-  /*
   for (const p of posts) {
-    const title = await p.get_title();
-    const paywalled = await p.paywalled();
-    console.log(`${title} — ${paywalled ? "is paywalled" : "can be viewed"}`)
+    const minimal_post_data: { title?: string, subtitle?: string | null, published?: string, paywalled?: boolean } = {};
+    minimal_post_data.title = await p.get_title();
+    minimal_post_data.subtitle = await p.get_subtitle();
+    minimal_post_data.published = await p.get_publish_date();
+    minimal_post_data.paywalled = await p.paywalled();
+
+    logger.info(minimal_post_data);
   }
-  */
-  // const post = new Post(`https://venh.substack.com/p/post-slug`);
 }
 
 fetch_self().catch((e) => {
