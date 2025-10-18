@@ -1,5 +1,5 @@
 {
-  "name": "substack",
+  "name": "@vznh/substack",
   "module": "index.ts",
   "type": "module",
   "private": true,
