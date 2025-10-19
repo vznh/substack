@@ -1,8 +1,16 @@
 {
   "name": "@vznh/substack",
-  "module": "index.ts",
+  "version": "0.1.0",
+  "private": false,
   "type": "module",
-  "private": true,
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "bun run build"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
   "devDependencies": {
     "@types/bun": "latest"
   },

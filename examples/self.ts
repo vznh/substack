@@ -1,4 +1,6 @@
 // examples/self
+//
+// Use using bun examples/self.ts
 import { substack } from "../src";
 import { Logger } from "@origranot/ts-logger";
 

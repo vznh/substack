@@ -1,5 +1,4 @@
 // auth
-
 type Cookie = {
   name: string;
   value: string;

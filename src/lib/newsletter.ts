@@ -6,7 +6,7 @@ import {
   ArchiveResponseSchema,
   RecommendationSchema,
   type ArchiveResponseItem,
-} from "./schemas/newsletter";
+} from "../schemas/newsletter";
 
 class Newsletter {
   private readonly url: string;
