@@ -1,6 +1,6 @@
-export { Auth, type Cookie } from "./lib/auth";
-export { Newsletter } from "./lib/newsletter";
-export { User } from "./lib/user";
-export { Post, type PostData } from "./lib/post";
-export { Category, fetch_all_categories } from "./lib/category";
-export { Substack as substack } from "./lib/substack";
+export { Auth, type Cookie } from "./auth";
+export { Newsletter } from "./newsletter";
+export { User } from "./user";
+export { Post, type PostData } from "./post";
+export { Category, fetch_all_categories } from "./category";
+export { Substack as substack } from "./substack";

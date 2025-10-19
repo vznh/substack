@@ -4,7 +4,7 @@ import {
   CategoryResponseSchema,
   type CategoryResponseItem,
   CategorySchema
-} from "../schemas/category";
+} from "./schemas/category";
 
 
 async function fetch_all_categories(): Promise<Array<{name: string, id: number | string}>> {
