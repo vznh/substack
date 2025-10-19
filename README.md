@@ -10,10 +10,36 @@ This package provides TS functionality to interact with Substack's unofficial AP
 - Fetch post content and metadata
 - Search for posts within newsletters
 
+## Usage
+You can easily get started with the SDK through
+```typescript
+import { substack } from "@vznh/substack";
+
+// Initialize a newsletter by its URL
+const newsletter = substack.newsletter()
+
+// Grab the 5 most recent posts from the newsletter
+const recent_posts = newsletter.get_posts(5);
+
+// Grab the top 3 posts from the newsletter
+const top_posts = newsletter.get_posts("top", 3);
+
+// Search for the 3 most relevant posts using a query, if any
+const search_results = await newsletter.search_posts("machine learning", 3);
+
+// Get recommendeded newsletters
+const recommendations = await newsletter.get_recommendations();
+
+// Get newsletter author(s)
+const authors = await newsletter.get_authors();
+```
+
 ## Installation
 Run `npm install @vznh/substack` in your project.
 
 ## Development
+
+`@vznh/substack` uses [Bun](https://bun.com), Zod for type validation, and ts-logger for development.
 
 To install dependencies:
 
@@ -31,3 +57,6 @@ Thanks for your interest in contributing. Please review all standards by looking
 - organizing imports
 
 Which can all be noted with a valid `biome.json`, which is on **TODO**.
+
+## Disclaimer
+This package is not affiliated with, endorsed by, or connected to Substack in any way. It is an independent project created to make Substack content more accessible through Node.
