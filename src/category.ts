@@ -1,5 +1,5 @@
 // category
-import { Newsletter } from "./newsletter";
+import { Newsletter } from "./newsletter.js";
 import {
   CategoryResponseSchema,
   type CategoryResponseItem,

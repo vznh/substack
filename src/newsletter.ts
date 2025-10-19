@@ -1,7 +1,7 @@
 // newsletter
-import type { Auth } from "./auth";
-import { Post } from "./post";
-import { User } from "./user";
+import type { Auth } from "./auth.js";
+import { Post } from "./post.js";
+import { User } from "./user.js";
 import {
   ArchiveResponseSchema,
   RecommendationSchema,

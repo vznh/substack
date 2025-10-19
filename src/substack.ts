@@ -1,9 +1,9 @@
 // substack
-import { Auth } from "./auth";
-import { Category, fetch_all_categories } from "./category";
-import { Newsletter } from "./newsletter";
-import { User } from "./user";
-import { Post } from "./post";
+import { Auth } from "./auth.js";
+import { Category, fetch_all_categories } from "./category.js";
+import { Newsletter } from "./newsletter.js";
+import { User } from "./user.js";
+import { Post } from "./post.js";
 
 class Substack {
   static Auth = Auth;

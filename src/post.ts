@@ -1,6 +1,6 @@
 // posts
 import { z } from "zod";
-import { Auth } from "./auth";
+import { Auth } from "./auth.js";
 
 const PostSchema = z.object({
   id: z.number(),
