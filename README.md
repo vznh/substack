@@ -14,6 +14,8 @@ This package provides TS functionality to interact with Substack's unofficial AP
 - Fetch post content and metadata
 - Search for posts within newsletters
 
+Other packages might require you to grab an API key - however, you might end up not using any of those features. 
+
 ## Usage
 You can easily get started with the SDK through
 ```typescript
