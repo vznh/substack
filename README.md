@@ -2,6 +2,10 @@
 
 An unofficial TypeScript SDK for interacting with Substack newsletters and content.
 
+[![npm version](https://badge.fury.io/js/@vznh%2Fsubstack.svg)](https://badge.fury.io/js/@vznh%2Fsubstack)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
+
 ## Overview
 
 This package provides TS functionality to interact with Substack's unofficial API, which allows you to
