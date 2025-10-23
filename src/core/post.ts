@@ -1,6 +1,7 @@
 // posts
 import { z } from "zod";
 import { Auth } from "./auth.js";
+import { logger } from "../utils/logger.js";
 
 const PostSchema = z.object({
   id: z.number(),
@@ -90,15 +91,36 @@ export class Post {
   async get_content(
     force_refresh = false
   ): Promise<string | null> {
+    const htmlEndpoint = `${this.base}/api/v1/posts/html/${this.slug}`;
+
+    const headers = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36"
+    };
+
+    try {
+      let response: Response;
+
+      if (this.auth?.authenticated) {
+        response = await this.auth.get(htmlEndpoint, { headers });
+      } else {
+        response = await fetch(htmlEndpoint, {
+          headers,
+          signal: AbortSignal.timeout(30000)
+        });
+      }
+
+      if (response.ok) {
+        return await response.text();
+      }
+    } catch (error) {
+      logger.debug(`Failed to fetch HTML from ${htmlEndpoint}, falling back to metadata...`);
+    }
+
     const data = await this.fetch_post_data(force_refresh);
     const content = data.body_html;
 
-    if (
-      !content &&
-      !this.auth &&
-      data.audience === "only_paid"
-    ) {
-      console.warn("This post is paywalled. Provide authentication to access full content.");
+    if (!content && !this.auth && data.audience === "only_paid") {
+      logger.debug("This post is paywalled. Provide authentication to access full content.");
     }
 
     return content;
