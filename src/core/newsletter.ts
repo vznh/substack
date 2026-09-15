@@ -1,4 +1,3 @@
-// newsletter
 import type { Auth } from "./auth.js";
 import { request } from "./http.js";
 import { Post } from "./post.js";
@@ -10,20 +9,13 @@ import {
   type ArchiveResponseItem,
 } from "../schemas/newsletter.js";
 
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36";
-
-// Safety bounds. Hitting either produces an explicit error naming the bound;
-// results are never silently truncated.
+// Bounds make incomplete upstream pagination explicit instead of truncating.
 const MAX_ARCHIVE_PAGES = 1000;
-// The archive is scanned client-side for podcast episodes (the server's
-// type=podcast filter is not honored; see audit). A bounded scan of 40 pages
-// (1000 archive entries at page_size 25) keeps that scan finite.
+// The upstream type=podcast filter is not honored, so scan archive metadata.
 const PODCAST_SCAN_PAGES = 40;
 const PAGE_DELAY_MS = 500;
 
 class Newsletter {
-  private readonly url: string;
   private readonly auth?: Auth;
   private readonly base: string;
 
@@ -37,16 +29,12 @@ class Newsletter {
     }
     const normalized = /^https?:\/\//i.test(value) ? value : `https://${value}`;
     const parsed = new URL(normalized);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new TypeError(`Newsletter URL must use http or https: ${url}`);
-    }
-    this.url = parsed.origin;
     this.base = parsed.origin;
     this.auth = auth;
   }
 
   private async request(endpoint: string): Promise<Response> {
-    return request(endpoint, { headers: { "User-Agent": USER_AGENT } }, this.auth);
+    return request(endpoint, {}, this.auth);
   }
 
   private async fetch_paginated_posts(
@@ -55,7 +43,6 @@ class Newsletter {
     page_size = 25,
     options?: {
       filter?: (item: ArchiveResponseItem) => boolean;
-      fixed_page_size?: boolean;
       max_pages?: number;
     },
   ): Promise<Array<ArchiveResponseItem>> {
@@ -71,11 +58,10 @@ class Newsletter {
     let offset = 0;
 
     for (let page = 0; page < max_pages; page++) {
-      // A short page is NOT proof of exhaustion (verified live): keep paging
-      // until an empty page, the requested limit, or an explicit bound.
-      // The offset advances by the requested window, matching server paging.
+      // A short page is not proof of exhaustion; continue until an empty page,
+      // the requested limit, or the explicit bound.
       const requested =
-        filter || options?.fixed_page_size
+        filter
           ? page_size
           : limit === undefined
             ? page_size
@@ -86,7 +72,7 @@ class Newsletter {
         offset: offset.toString(),
         limit: requested.toString(),
       });
-      const endpoint = `${this.url}/api/v1/archive?${query}`;
+      const endpoint = `${this.base}/api/v1/archive?${query}`;
       const response = await this.request(endpoint);
       const items = ArchiveResponseSchema.parse(await response.json());
 
@@ -100,7 +86,7 @@ class Newsletter {
         new_items++;
         // Rewrite /home/post/ URLs (e.g. cross-pinned posts) to this origin.
         if (item.canonical_url.includes("substack.com/home/post/")) {
-          item.canonical_url = `${this.url}/p/${item.slug}`;
+          item.canonical_url = `${this.base}/p/${item.slug}`;
         }
         if (!filter || filter(item)) {
           results.push(item);
@@ -161,7 +147,7 @@ class Newsletter {
         { sort: "new" },
         limit,
         25,
-        { filter: is_podcast, fixed_page_size: true, max_pages: PODCAST_SCAN_PAGES },
+        { filter: is_podcast, max_pages: PODCAST_SCAN_PAGES },
       )
     ).map((item) => new Post(item.canonical_url, this.auth, item));
   }
@@ -200,9 +186,8 @@ class Newsletter {
     return this.base;
   }
 
-  // override
   toString(): string {
-    return `Newsletter: ${this.url}`;
+    return `Newsletter: ${this.base}`;
   }
 }
 
