@@ -15,9 +15,11 @@ class Substack {
   static list_all_categories = fetch_all_categories;
 
   static user(
-    username: string
+    username: string,
+    follow_redirects_or_auth: boolean | Auth = true,
+    auth?: Auth,
   ) {
-    return new User(username);
+    return new User(username, follow_redirects_or_auth, auth);
   }
 
   static newsletter(
@@ -36,9 +38,10 @@ class Substack {
 
   static category(
     name?: string,
-    id?: number | string
+    id?: number | string,
+    auth?: Auth,
   ) {
-    return new Category(name, id);
+    return new Category(name, id, auth);
   }
 }
 

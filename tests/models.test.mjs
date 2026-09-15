@@ -211,3 +211,62 @@ test("renamed users follow only a safe Substack profile redirect", async () => {
   ]);
 });
 
+test("Category resolves numeric IDs and preserves publication metadata", async () => {
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url).endsWith("/categories")) {
+      return json([{ name: "Technology", id: 4 }, { name: "podcast", id: "podcast" }]);
+    }
+    return json({
+      publications: [{
+        id: 123,
+        name: "Example",
+        base_url: "https://example.substack.com",
+        subdomain: "example",
+        custom_domain: null,
+        private_wire_field: "kept",
+      }],
+      more: false,
+    });
+  };
+  const category = new Category("Technology");
+  assert.equal(category.get_id(), undefined);
+  const [publication] = await category.get_newsletter_metadata();
+  assert.equal(category.get_id(), 4);
+  assert.equal(publication.private_wire_field, "kept");
+  assert.match(calls[1], /\/public\/4\/all\?page=0$/);
+});
+
+test("Category refresh joins an active load instead of racing its cache", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return json({
+      publications: [{
+        id: 123,
+        name: "Example",
+        base_url: "https://example.substack.com",
+        subdomain: "example",
+        custom_domain: null,
+      }],
+      more: false,
+    });
+  };
+  const category = new Category("Technology", 4);
+  await Promise.all([category.get_newsletter_metadata(), category.refresh_data()]);
+  assert.equal(calls, 1);
+});
+
+test("URLs reject unsupported schemes and preserve explicit ports", async () => {
+  assert.throws(() => new Newsletter("ftp://example.com"), /http or https/);
+  assert.throws(() => new Post("mailto:test@example.com"), /http or https/);
+  let requested;
+  globalThis.fetch = async (url) => {
+    requested = String(url);
+    return json(detail);
+  };
+  await new Post("http://localhost:43210/p/hello-world/").get_metadata();
+  assert.equal(new URL(requested).port, "43210");
+});

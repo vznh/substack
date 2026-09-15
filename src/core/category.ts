@@ -1,57 +1,97 @@
 // category
+import type { Auth } from "./auth.js";
+import { request } from "./http.js";
 import { Newsletter } from "./newsletter.js";
 import {
   CategoryResponseSchema,
+  CategorySchema,
   type CategoryResponseItem,
-  CategorySchema
 } from "../schemas/category.js";
 
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36";
 
-async function fetch_all_categories(): Promise<Array<{name: string, id: number | string}>> {
+// Safety bound. Reaching it while the server still reports `more: true`
+// raises an explicit error instead of silently truncating results.
+const MAX_CATEGORY_PAGES = 100;
+const PAGE_DELAY_MS = 500;
+
+/**
+ * Get name / id representations of all newsletter categories.
+ */
+async function fetch_all_categories(auth?: Auth): Promise<
+  Array<{ name: string; id: number | string }>
+> {
   const endpoint = "https://substack.com/api/v1/categories";
-  const response = await fetch(endpoint, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36"
-    },
-    signal: AbortSignal.timeout(30000)
-  });
-
-  if (!response.ok) throw new Error(`Failed to fetch categories: ${response.status}`);
-
+  const response = await request(endpoint, {
+    headers: { "User-Agent": USER_AGENT },
+  }, auth);
   const categories = CategorySchema.array().parse(await response.json());
-  // Keep original ID format (string or number)
-  return categories.map(cat => ({
-    name: cat.name,
-    id: cat.id
-  }));
+  // Keep original ID format (numeric on the wire).
+  return categories.map((cat) => ({ name: cat.name, id: cat.id }));
 }
 
 class Category {
   private name?: string;
   private id?: number | string;
   private newsletters_data: CategoryResponseItem[] | null = null;
+  private dataPromise: Promise<CategoryResponseItem[]> | null = null;
+  private initPromise: Promise<void> | null = null;
+  private readonly auth?: Auth;
 
-  constructor(name?: string, id?: number | string) {
-    if (!name && !id) {
+  constructor(name?: string, id?: number | string, auth?: Auth) {
+    if (name === undefined && id === undefined) {
       throw new Error("Either name or id must be provided");
     }
-
     this.name = name;
     this.id = id;
-
-    if (this.name && !this.id) {
-      this._get_id_from_name();
-    } else if (this.id && !this.name) {
-      this._get_name_from_id();
-    }
+    this.auth = auth;
   }
 
   toString(): string {
     return `${this.name} (${this.id})`;
   }
 
+  /**
+   * Resolve the missing name/id counterpart. Constructors cannot await, so
+   * lookups are lazy and shared; every public operation awaits this first.
+   * A failed lookup clears the promise so a later call can retry.
+   */
+  private initialize(): Promise<void> {
+    if (this.id !== undefined && this.name !== undefined) {
+      return Promise.resolve();
+    }
+    if (!this.initPromise) {
+      const p = (async () => {
+        if (this.id === undefined) await this._get_id_from_name();
+        else if (this.name === undefined) await this._get_name_from_id();
+      })();
+      this.initPromise = p;
+      this.initPromise.catch(() => {
+        if (this.initPromise === p) this.initPromise = null;
+      });
+    }
+    const p = this.initPromise;
+    return p;
+  }
+
+  /** Awaitable readiness; resolves once name/id lookups have completed. */
+  async ready(): Promise<this> {
+    await this.initialize();
+    return this;
+  }
+
+  /** Async factory: constructs the category and awaits its initialization. */
+  static async create(
+    name?: string,
+    id?: number | string,
+    auth?: Auth,
+  ): Promise<Category> {
+    return new Category(name, id, auth).ready();
+  }
+
   private async _get_id_from_name(): Promise<void> {
-    const categories = await fetch_all_categories();
+    const categories = await fetch_all_categories(this.auth);
     for (const cat of categories) {
       if (cat.name === this.name) {
         this.id = cat.id;
@@ -62,9 +102,10 @@ class Category {
   }
 
   private async _get_name_from_id(): Promise<void> {
-    const categories = await fetch_all_categories();
+    const categories = await fetch_all_categories(this.auth);
+    // Lookup keys may arrive as string or number; compare normalized.
     for (const cat of categories) {
-      if (cat.id === this.id) {
+      if (String(cat.id) === String(this.id)) {
         this.name = cat.name;
         return;
       }
@@ -72,47 +113,62 @@ class Category {
     throw new Error(`Category ID ${this.id} not found`);
   }
 
-  private async fetch_newsletters_data(force_refresh = false): Promise<CategoryResponseItem[]> {
-    if (
-      this.newsletters_data &&
-      !force_refresh
-    ) {
-      return this.newsletters_data;
-    }
+  private async fetch_newsletters_data(
+    force_refresh = false
+  ): Promise<CategoryResponseItem[]> {
+    if (this.newsletters_data && !force_refresh) return this.newsletters_data;
+    // Refreshes also join an active request. Otherwise an older request can
+    // finish after refresh and overwrite the fresh cache with stale data.
+    if (this.dataPromise) return this.dataPromise;
 
-    const endpoint = `https://substack.com/api/v1/category/public/${this.id}/all?page=`;
-    const all_newsletters = [];
-    let page_number = 0;
-    let more = true;
+    const p = (async () => {
+      await this.initialize();
 
-    while (more && page_number <= 20) {
-      const response = await fetch(`${endpoint}${page_number}`, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36"
-        },
-        signal: AbortSignal.timeout(30000)
-      });
+      const endpoint = `https://substack.com/api/v1/category/public/${encodeURIComponent(String(this.id))}/all?page=`;
+      const all_newsletters: CategoryResponseItem[] = [];
+      const seen = new Set<number>();
+      let page_number = 0;
 
-      if (!response.ok) throw new Error(`Failed to fetch newsletters: ${response.status}`);
+      while (true) {
+        if (page_number >= MAX_CATEGORY_PAGES) {
+          throw new Error(
+            `Category pagination hit the ${MAX_CATEGORY_PAGES}-page bound at page ${page_number} while the server still reported more results; aborting instead of returning silently truncated results.`,
+          );
+        }
 
-      const data = CategoryResponseSchema.parse(await response.json());
-      all_newsletters.push(...data.publications);
-      page_number++;
-      more = data.more;
+        const response = await request(`${endpoint}${page_number}`, {
+          headers: { "User-Agent": USER_AGENT },
+        }, this.auth);
+        const data = CategoryResponseSchema.parse(await response.json());
+        for (const pub of data.publications) {
+          if (seen.has(pub.id)) continue;
+          seen.add(pub.id);
+          all_newsletters.push(pub);
+        }
+        page_number++;
 
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
+        if (!data.more) break; // server-declared completion
 
-    this.newsletters_data = all_newsletters;
-    return all_newsletters;
+        await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
+      }
+
+      this.newsletters_data = all_newsletters;
+      return all_newsletters;
+    })();
+    this.dataPromise = p;
+    const cleanup = () => {
+      if (this.dataPromise === p) this.dataPromise = null;
+    };
+    p.then(cleanup, cleanup);
+    return p;
   }
 
   async get_newsletter_urls(): Promise<string[]> {
-    return (await this.fetch_newsletters_data()).map(item => item.base_url);
+    return (await this.fetch_newsletters_data()).map((item) => item.base_url);
   }
 
   async get_newsletters(): Promise<Newsletter[]> {
-    return (await this.get_newsletter_urls()).map(url => new Newsletter(url));
+    return (await this.get_newsletter_urls()).map((url) => new Newsletter(url, this.auth));
   }
 
   async get_newsletter_metadata(): Promise<CategoryResponseItem[]> {
@@ -123,6 +179,7 @@ class Category {
     await this.fetch_newsletters_data(true);
   }
 
+  /** Sync accessors: undefined until initialization has completed. */
   get_name(): string | undefined {
     return this.name;
   }
