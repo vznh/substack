@@ -4,3 +4,6 @@ export { User } from "./core/user.js";
 export { Post, type PostData } from "./core/post.js";
 export { Category, fetch_all_categories } from "./core/category.js";
 export { Substack as substack } from "./core/substack.js";
+
+export { request, setFetch, HttpError, type RequestOptions, type FetchLike } from "./core/http.js";
+export { AuthError } from "./core/errors.js";
