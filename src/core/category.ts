@@ -1,4 +1,3 @@
-// category
 import type { Auth } from "./auth.js";
 import { request } from "./http.js";
 import { Newsletter } from "./newsletter.js";
@@ -8,11 +7,7 @@ import {
   type CategoryResponseItem,
 } from "../schemas/category.js";
 
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36";
-
-// Safety bound. Reaching it while the server still reports `more: true`
-// raises an explicit error instead of silently truncating results.
+// Raise an explicit error rather than silently truncating a still-paginated response.
 const MAX_CATEGORY_PAGES = 100;
 const PAGE_DELAY_MS = 500;
 
@@ -23,9 +18,7 @@ async function fetch_all_categories(auth?: Auth): Promise<
   Array<{ name: string; id: number | string }>
 > {
   const endpoint = "https://substack.com/api/v1/categories";
-  const response = await request(endpoint, {
-    headers: { "User-Agent": USER_AGENT },
-  }, auth);
+  const response = await request(endpoint, {}, auth);
   const categories = CategorySchema.array().parse(await response.json());
   // Keep original ID format (numeric on the wire).
   return categories.map((cat) => ({ name: cat.name, id: cat.id }));
@@ -52,11 +45,7 @@ class Category {
     return `${this.name} (${this.id})`;
   }
 
-  /**
-   * Resolve the missing name/id counterpart. Constructors cannot await, so
-   * lookups are lazy and shared; every public operation awaits this first.
-   * A failed lookup clears the promise so a later call can retry.
-   */
+  /** Resolve the missing name/id counterpart lazily and share the lookup. */
   private initialize(): Promise<void> {
     if (this.id !== undefined && this.name !== undefined) {
       return Promise.resolve();
@@ -64,10 +53,10 @@ class Category {
     if (!this.initPromise) {
       const p = (async () => {
         if (this.id === undefined) await this._get_id_from_name();
-        else if (this.name === undefined) await this._get_name_from_id();
+        else await this._get_name_from_id();
       })();
       this.initPromise = p;
-      this.initPromise.catch(() => {
+      p.catch(() => {
         if (this.initPromise === p) this.initPromise = null;
       });
     }
@@ -75,7 +64,6 @@ class Category {
     return p;
   }
 
-  /** Awaitable readiness; resolves once name/id lookups have completed. */
   async ready(): Promise<this> {
     await this.initialize();
     return this;
@@ -103,7 +91,6 @@ class Category {
 
   private async _get_name_from_id(): Promise<void> {
     const categories = await fetch_all_categories(this.auth);
-    // Lookup keys may arrive as string or number; compare normalized.
     for (const cat of categories) {
       if (String(cat.id) === String(this.id)) {
         this.name = cat.name;
@@ -117,8 +104,6 @@ class Category {
     force_refresh = false
   ): Promise<CategoryResponseItem[]> {
     if (this.newsletters_data && !force_refresh) return this.newsletters_data;
-    // Refreshes also join an active request. Otherwise an older request can
-    // finish after refresh and overwrite the fresh cache with stale data.
     if (this.dataPromise) return this.dataPromise;
 
     const p = (async () => {
@@ -136,9 +121,7 @@ class Category {
           );
         }
 
-        const response = await request(`${endpoint}${page_number}`, {
-          headers: { "User-Agent": USER_AGENT },
-        }, this.auth);
+        const response = await request(`${endpoint}${page_number}`, {}, this.auth);
         const data = CategoryResponseSchema.parse(await response.json());
         for (const pub of data.publications) {
           if (seen.has(pub.id)) continue;
@@ -147,7 +130,7 @@ class Category {
         }
         page_number++;
 
-        if (!data.more) break; // server-declared completion
+        if (!data.more) break;
 
         await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
       }
@@ -179,7 +162,6 @@ class Category {
     await this.fetch_newsletters_data(true);
   }
 
-  /** Sync accessors: undefined until initialization has completed. */
   get_name(): string | undefined {
     return this.name;
   }

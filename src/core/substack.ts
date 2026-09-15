@@ -1,4 +1,3 @@
-// substack
 import { Auth } from "./auth.js";
 import { Category, fetch_all_categories } from "./category.js";
 import { Newsletter } from "./newsletter.js";

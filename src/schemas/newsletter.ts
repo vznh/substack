@@ -1,8 +1,5 @@
-// schemas/newsletter
 import { z } from "zod";
 
-// Publication metadata. Only identity fields are strict; the rest is
-// optional and unknown fields are preserved via passthrough.
 const NewsletterMetadataSchema = z
   .object({
     id: z.number(),
@@ -14,8 +11,6 @@ const NewsletterMetadataSchema = z
   })
   .passthrough();
 
-// Archive summary entries. Publication IDs are numeric on the wire. Raw
-// fields (including podcast metadata) are retained via passthrough.
 const ArchiveResponseSchema = z.array(
   z
     .object({
