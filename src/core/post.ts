@@ -1,31 +1,11 @@
-// posts
 import { z } from "zod";
 import type { Auth } from "./auth.js";
 import { request } from "./http.js";
+import { ArchiveResponseSchema } from "../schemas/newsletter.js";
 
-// Validate the direct post-detail JSON object (no wrapper). Only identity
-// fields are strict; all other metadata is optional and unknown fields are
-// preserved via passthrough so raw API data is never silently dropped.
-const PostSchema = z
-  .object({
-    id: z.number(),
-    slug: z.string(),
-    title: z.string(),
-    canonical_url: z.string(),
-    publication_id: z.number(),
-    subtitle: z.string().nullish(),
-    body_html: z.string().nullish(),
-    publish_date: z.string().nullish(),
-    post_date: z.string().nullish(),
-    audience: z.string().nullish(),
-    type: z.string().nullish(),
-    comment_count: z.number().nullish(),
-    comments_count: z.number().nullish(),
-    podcast_url: z.string().nullish(),
-    podcast_upload_id: z.union([z.string(), z.number()]).nullish(),
-    podcast_duration: z.number().nullish(),
-  })
-  .passthrough();
+// The detail endpoint returns a direct object. Keep unknown fields so callers
+// can access metadata the SDK does not model yet.
+const PostSchema = ArchiveResponseSchema.element.extend({ title: z.string() });
 
 export type PostData = z.infer<typeof PostSchema>;
 
@@ -47,14 +27,9 @@ export type PostSummaryData = {
   [key: string]: unknown;
 };
 
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36";
-
 export class Post {
   private readonly url: string;
   private readonly auth?: Auth;
-  private readonly base: string;
-  private readonly slug: string;
   private readonly endpoint: string;
   /** Cached data; may be an archive summary (incomplete) or full detail. */
   private post_data: PostData | PostSummaryData | null = null;
@@ -70,7 +45,7 @@ export class Post {
   ) {
     this.url = url;
     this.auth = auth;
-    this.post_data = initialData || null;
+    this.post_data = initialData ?? null;
 
     // origin preserves an explicit port and drops any path such as /archive?...
     const value = url.trim();
@@ -78,38 +53,27 @@ export class Post {
       throw new TypeError(`Post URL must use http or https: ${url}`);
     }
     const parsed = new URL(value);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new TypeError(`Post URL must use http or https: ${url}`);
-    }
-    this.base = parsed.origin;
     const parts = parsed.pathname.replace(/^\/+|\/+$/g, "").split("/");
     const rawSlug = parts[parts.length - 1] || "";
+    let slug: string;
     try {
-      this.slug = decodeURIComponent(rawSlug);
+      slug = decodeURIComponent(rawSlug);
     } catch (cause) {
       throw new TypeError(`Post URL contains an invalid slug: ${url}`, { cause });
     }
 
-    if (!this.slug) throw new Error(`Couldn't extract slug from ${url}.`);
+    if (!slug) throw new Error(`Couldn't extract slug from ${url}.`);
 
-    this.endpoint = `${this.base}/api/v1/posts/${encodeURIComponent(this.slug)}`;
+    this.endpoint = `${parsed.origin}/api/v1/posts/${encodeURIComponent(slug)}`;
   }
 
   toString() {
     return `Post: ${this.url}`;
   }
 
-  private is_cached(require_full: boolean): boolean {
-    return this.post_data !== null && (!require_full || this.has_full_data);
-  }
-
   private start_fetch(): Promise<PostData> {
     const p = (async () => {
-      const response = await request(
-        this.endpoint,
-        { headers: { "User-Agent": USER_AGENT } },
-        this.auth
-      );
+      const response = await request(this.endpoint, {}, this.auth);
       const json = await response.json();
       const data = PostSchema.parse(json);
       this.post_data = data;
@@ -124,12 +88,7 @@ export class Post {
     return p;
   }
 
-  /**
-   * Fetch (or read from cache) post data.
-   * @param forced_refresh ignore and replace any cache
-   * @param require_full only accept full detail data; archive summaries
-   *   (body_html = null) are hydrated from the post endpoint first
-   */
+  /** Read cached data or hydrate an archive summary from the detail endpoint. */
   private fetch_post_data(
     forced_refresh: boolean,
     require_full: true,
@@ -142,13 +101,11 @@ export class Post {
     forced_refresh = false,
     require_full = false,
   ): Promise<PostData | PostSummaryData> {
-    if (!forced_refresh && this.is_cached(require_full)) {
-      return this.post_data!;
+    if (!forced_refresh && this.post_data !== null && (!require_full || this.has_full_data)) {
+      return this.post_data;
     }
 
-    // Every caller shares the same request, including force-refresh callers.
-    // Returning the rejection is important: a failed request must not turn
-    // into an unbounded retry storm for concurrent readers.
+    // Share concurrent reads, including force-refresh calls.
     if (this.inFlight) return this.inFlight;
 
     return this.start_fetch();
@@ -163,8 +120,6 @@ export class Post {
   async get_content(
     force_refresh = false
   ): Promise<string | null> {
-    // Content comes from body_html of the post detail endpoint. A null body
-    // on an only_paid post without auth usually means paywalled content.
     const data = await this.fetch_post_data(force_refresh, true);
     return data.body_html ?? null;
   }
@@ -183,17 +138,11 @@ export class Post {
   }
 
   async get_title(): Promise<string> {
-    // Archive summaries often contain a usable title. Preserve that cache
-    // optimization, but hydrate when it is absent/null because PostData
-    // requires a real detail title.
+    // Archive titles are usable when present; otherwise hydrate the detail.
     const cached_title = (await this.fetch_post_data()).title;
     if (typeof cached_title === "string") return cached_title;
 
-    const title = (await this.fetch_post_data(false, true)).title;
-    if (typeof title !== "string") {
-      throw new Error("Post detail response did not include a title");
-    }
-    return title;
+    return (await this.fetch_post_data(false, true)).title;
   }
 
   async get_subtitle(): Promise<string | null> {
