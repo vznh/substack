@@ -91,3 +91,55 @@ test("concurrent force refreshes coalesce", async () => {
   assert.equal(first.title, second.title);
 });
 
+test("User handles are encoded, optional profile fields do not block identity", async () => {
+  let requested;
+  globalThis.fetch = async (url) => {
+    requested = String(url);
+    return json({ id: 9, name: "A Name", extra: "raw" });
+  };
+  const user = new User("@name with spaces");
+  assert.equal(await user.get_name(), "A Name");
+  assert.deepEqual(await user.get_subscriptions(), []);
+  assert.equal((await user.get_raw_data()).extra, "raw");
+  assert.match(requested, /name%20with%20spaces\/public_profile$/);
+});
+
+test("concurrent User failures preserve one rejection and one request", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return json({ error: "limited" }, 429);
+  };
+  const user = new User("rate-limited");
+  const results = await Promise.allSettled([user.get_name(), user.get_id()]);
+  assert.equal(calls, 1);
+  assert.equal(results[0].status, "rejected");
+  assert.equal(results[1].reason.status, 429);
+});
+
+test("renamed users follow only a safe Substack profile redirect", async () => {
+  const requested = [];
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    requested.push(value);
+    if (value.includes("/api/v1/user/old%20name/public_profile")) {
+      return json({ error: "missing" }, 404);
+    }
+    if (value === "https://substack.com/@old%20name") {
+      const response = json(null);
+      Object.defineProperty(response, "url", { value: "https://substack.com/@new-name" });
+      return response;
+    }
+    return json({ id: 10, name: "Renamed" });
+  };
+  const user = new User("old name");
+  assert.equal(await user.get_name(), "Renamed");
+  assert.equal(user.get_username(), "new-name");
+  assert.equal(user.was_redirected(), true);
+  assert.deepEqual(requested, [
+    "https://substack.com/api/v1/user/old%20name/public_profile",
+    "https://substack.com/@old%20name",
+    "https://substack.com/api/v1/user/new-name/public_profile",
+  ]);
+});
+
