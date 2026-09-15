@@ -1,7 +1,6 @@
 // posts
 import { z } from "zod";
 import { Auth } from "./auth.js";
-import { logger } from "../utils/logger.js";
 
 const PostSchema = z.object({
   id: z.number(),
@@ -113,14 +112,12 @@ export class Post {
         return await response.text();
       }
     } catch (error) {
-      logger.debug(`Failed to fetch HTML from ${htmlEndpoint}, falling back to metadata...`);
     }
 
     const data = await this.fetch_post_data(force_refresh);
     const content = data.body_html;
 
     if (!content && !this.auth && data.audience === "only_paid") {
-      logger.debug("This post is paywalled. Provide authentication to access full content.");
     }
 
     return content;

@@ -1,4 +1,5 @@
 // auth
+import { readFile } from "node:fs/promises";
 type Cookie = {
   name: string;
   value: string;
@@ -27,8 +28,7 @@ class Auth {
 
   private async load_cookies(): Promise<boolean> {
     try {
-      const file = Bun.file(this.cookies_path);
-      const cookies = await file.json() as Cookie[];
+      const cookies = JSON.parse(await readFile(this.cookies_path, "utf8")) as Cookie[];
       this.cookies = cookies;
       this.authenticated = true;
       return true;
