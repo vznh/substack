@@ -57,6 +57,32 @@ test("Post parses direct detail, preserves unknown fields, and caches", async ()
   assert.equal(calls, 1);
 });
 
+test("archive summaries hydrate before metadata/content and keep nullable titles", async () => {
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    return String(url).includes("/archive?") ? json([summary]) : json(detail);
+  };
+
+  const [post] = await new Newsletter("https://example.substack.com/archive").get_posts("new", 1);
+  assert.equal(await post.get_id(), detail.id);
+  assert.equal(await post.get_content(), detail.body_html);
+  assert.equal((await post.get_metadata()).extra_wire_field.retained, true);
+  assert.equal(calls.length, 2);
+  assert.match(calls[1], /\/api\/v1\/posts\/hello-world$/);
+});
+
+test("archive summary titles are returned without detail hydration", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return json([{ ...summary, title: "Cached archive title" }]);
+  };
+  const [post] = await new Newsletter("https://example.substack.com").get_posts("new", 1);
+  assert.equal(await post.get_title(), "Cached archive title");
+  assert.equal(calls, 1);
+});
+
 test("concurrent post failures share one rejection and one request", async () => {
   let calls = 0;
   globalThis.fetch = async () => {
@@ -89,6 +115,48 @@ test("concurrent force refreshes coalesce", async () => {
   ]);
   assert.equal(calls, 2);
   assert.equal(first.title, second.title);
+});
+
+test("archive EOF returns available results after a short page", async () => {
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    return String(url).includes("offset=0") ? json([summary]) : json([]);
+  };
+  const posts = await new Newsletter("example.substack.com").get_posts("new", 5);
+  assert.equal(posts.length, 1);
+  assert.equal(calls.length, 2);
+});
+
+test("zero and negative limits have explicit behavior", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return json([summary]);
+  };
+  const newsletter = new Newsletter("https://example.substack.com");
+  assert.deepEqual(await newsletter.get_posts("new", 0), []);
+  await assert.rejects(() => newsletter.get_posts("new", -1), RangeError);
+  assert.equal(calls, 0);
+});
+
+test("podcasts filter actual media metadata and accept UUID upload IDs", async () => {
+  const podcast = {
+    ...summary,
+    id: 102,
+    slug: "episode",
+    canonical_url: "https://example.substack.com/p/episode",
+    podcast_upload_id: "b2b17a28-dff2-4575-857c-276c937feaa6",
+  };
+  let requested;
+  globalThis.fetch = async (url) => {
+    requested = String(url);
+    return json([summary, podcast]);
+  };
+  const posts = await new Newsletter("https://example.substack.com").get_podcasts(1);
+  assert.equal(posts.length, 1);
+  assert.equal(await posts[0].get_id(), podcast.id);
+  assert.equal(new URL(requested).searchParams.has("type"), false);
 });
 
 test("User handles are encoded, optional profile fields do not block identity", async () => {

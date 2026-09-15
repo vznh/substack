@@ -1,86 +1,132 @@
 // newsletter
 import type { Auth } from "./auth.js";
+import { request } from "./http.js";
 import { Post } from "./post.js";
 import { User } from "./user.js";
 import {
   ArchiveResponseSchema,
+  AuthorsSchema,
   RecommendationSchema,
   type ArchiveResponseItem,
 } from "../schemas/newsletter.js";
 
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36";
+
+// Safety bounds. Hitting either produces an explicit error naming the bound;
+// results are never silently truncated.
+const MAX_ARCHIVE_PAGES = 1000;
+// The archive is scanned client-side for podcast episodes (the server's
+// type=podcast filter is not honored; see audit). A bounded scan of 40 pages
+// (1000 archive entries at page_size 25) keeps that scan finite.
+const PODCAST_SCAN_PAGES = 40;
+const PAGE_DELAY_MS = 500;
+
 class Newsletter {
   private readonly url: string;
   private readonly auth?: Auth;
-  private readonly base?: string;
+  private readonly base: string;
 
   constructor(url: string, auth?: Auth) {
-    this.url = url;
+    // Tolerate bare hostnames ("venh.substack.com") as well as full URLs and
+    // URLs carrying paths such as "/archive?sort=new"; all normalize to the
+    // origin (preserving any explicit port).
+    const value = url.trim();
+    if (/^[a-z][a-z\d+.-]*:/i.test(value) && !/^https?:\/\//i.test(value)) {
+      throw new TypeError(`Newsletter URL must use http or https: ${url}`);
+    }
+    const normalized = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new TypeError(`Newsletter URL must use http or https: ${url}`);
+    }
+    this.url = parsed.origin;
+    this.base = parsed.origin;
     this.auth = auth;
+  }
 
-    const parsed = new URL(url);
-    this.base = `${parsed.protocol}//${parsed.hostname}`;
+  private async request(endpoint: string): Promise<Response> {
+    return request(endpoint, { headers: { "User-Agent": USER_AGENT } }, this.auth);
   }
 
   private async fetch_paginated_posts(
     params: Record<string, string>,
     limit?: number,
     page_size = 25,
+    options?: {
+      filter?: (item: ArchiveResponseItem) => boolean;
+      fixed_page_size?: boolean;
+      max_pages?: number;
+    },
   ): Promise<Array<ArchiveResponseItem>> {
-    const results = [];
-    let offset = 0;
-    let more = true;
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
+      throw new RangeError("limit must be a nonnegative integer");
+    }
+    if (limit === 0) return [];
 
-    while (more) {
-      const current = new URLSearchParams({
+    const filter = options?.filter;
+    const max_pages = options?.max_pages ?? MAX_ARCHIVE_PAGES;
+    const results: ArchiveResponseItem[] = [];
+    const seen = new Set<number>();
+    let offset = 0;
+
+    for (let page = 0; page < max_pages; page++) {
+      // A short page is NOT proof of exhaustion (verified live): keep paging
+      // until an empty page, the requested limit, or an explicit bound.
+      // The offset advances by the requested window, matching server paging.
+      const requested =
+        filter || options?.fixed_page_size
+          ? page_size
+          : limit === undefined
+            ? page_size
+            : Math.min(page_size, limit - results.length);
+
+      const query = new URLSearchParams({
         ...params,
         offset: offset.toString(),
-        limit: page_size.toString(),
+        limit: requested.toString(),
       });
-
-      const endpoint = `${this.url}/api/v1/archive?${current}`;
+      const endpoint = `${this.url}/api/v1/archive?${query}`;
       const response = await this.request(endpoint);
       const items = ArchiveResponseSchema.parse(await response.json());
 
-      if (items?.length === 0) break;
+      if (items.length === 0) return results; // true end of archive
 
-      // handle /home/
+      let new_items = 0;
+      let reached_limit = false;
       for (const item of items) {
+        if (seen.has(item.id)) continue; // dedupe repeats
+        seen.add(item.id);
+        new_items++;
+        // Rewrite /home/post/ URLs (e.g. cross-pinned posts) to this origin.
         if (item.canonical_url.includes("substack.com/home/post/")) {
-          const slug = item.slug;
-          item.canonical_url = `${this.url}/p/${slug}`;
+          item.canonical_url = `${this.url}/p/${item.slug}`;
+        }
+        if (!filter || filter(item)) {
+          results.push(item);
+          if (limit !== undefined && results.length >= limit) {
+            reached_limit = true;
+            break;
+          }
         }
       }
-      results.push(...items);
-      offset += page_size;
 
-      if (limit && results.length >= limit) {
-        return results.slice(0, limit);
+      if (reached_limit) return results.slice(0, limit);
+      offset += requested;
+
+      if (new_items === 0) {
+        // Nonempty page with no progress: server is repeating itself.
+        throw new Error(
+          `Archive pagination made no progress at offset ${offset} (repeated items); aborting to avoid duplicates or silent truncation.`,
+        );
       }
 
-      if (items.length < page_size) {
-        more = false;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, PAGE_DELAY_MS));
     }
 
-    return results;
-  }
-
-  private async request(endpoint: string): Promise<Response> {
-    const headers = {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36",
-    };
-
-    if (this.auth?.authenticated) {
-      return this.auth.get(endpoint, { headers });
-    }
-
-    return fetch(endpoint, {
-      headers,
-      signal: AbortSignal.timeout(30000),
-    });
+    throw new Error(
+      `Archive pagination hit the ${max_pages}-page bound at offset ${offset} with ${results.length}${limit === undefined ? "" : `/${limit}`} results; aborting instead of returning silently truncated results.`,
+    );
   }
 
   async get_posts(sorting = "new", limit?: number): Promise<Post[]> {
@@ -95,44 +141,82 @@ class Newsletter {
     ).map((item) => new Post(item.canonical_url, this.auth, item));
   }
 
-  // implement podcasts?
+  /**
+   * Get podcast episodes from the newsletter.
+   *
+   * The server's `type=podcast` query is not honored (verified live: it
+   * returns ordinary newsletter posts with null audio fields), so episodes
+   * are found by scanning archive pages and filtering client-side on actual
+   * podcast media fields (podcast_url / podcast_upload_id). `limit` is
+   * applied AFTER filtering. The scan is bounded; if the bound is reached
+   * before the archive ends, an explicit error names the bound.
+   */
+  async get_podcasts(limit?: number): Promise<Post[]> {
+    const is_podcast = (item: ArchiveResponseItem): boolean =>
+      (typeof item.podcast_url === "string" && item.podcast_url.length > 0) ||
+      item.podcast_upload_id != null;
+
+    return (
+      await this.fetch_paginated_posts(
+        { sort: "new" },
+        limit,
+        25,
+        { filter: is_podcast, fixed_page_size: true, max_pages: PODCAST_SCAN_PAGES },
+      )
+    ).map((item) => new Post(item.canonical_url, this.auth, item));
+  }
 
   async get_recommendations(): Promise<Newsletter[]> {
-    const posts = await this.get_posts();
+    // One archive post is enough to resolve the publication id; the archive
+    // summary already carries publication_id, so no detail request is needed.
+    const posts = await this.get_posts("new", 1);
     if (!posts.length) return [];
 
-    const metadata = await posts[0]?.get_metadata();
-    const endpoint = `${this.base}/api/v1/recommendations/from/${metadata?.publication_id}`;
+    const publication_id = await posts[0].get_publication_id();
+    const endpoint = `${this.base}/api/v1/recommendations/from/${publication_id}`;
 
     const response = await this.request(endpoint);
     const recommendations = RecommendationSchema.array().parse(
       await response.json(),
     );
-    const urls = recommendations.map(rec => {
+    const urls = recommendations.map((rec) => {
       const pub = rec.recommendedPublication;
-      return pub.custom_domain || `https://${pub.subdomain}.substack.com`;
+      // Custom domains arrive bare; they must become usable https URLs.
+      return normalizePublicationUrl(pub.custom_domain ?? pub.subdomain + ".substack.com");
     });
 
-    return urls.map(url => new Newsletter(url, this.auth));
+    return urls.map((url) => new Newsletter(url, this.auth));
   }
 
   async get_authors(): Promise<User[]> {
     const endpoint = `${this.base}/api/v1/publication/users/ranked?public=true`;
     const response = await this.request(endpoint);
-    const authors = await response.json() as Array<{ handle: string }>;
+    const authors = AuthorsSchema.parse(await response.json());
 
-    return authors.map((author: { handle: string }) => new User(author.handle));
+    return authors.map((author) => new User(author.handle, true, this.auth));
   }
 
   get_base_url(): string {
-    return this.base ?? "";
+    return this.base;
   }
 
   // override
   toString(): string {
     return `Newsletter: ${this.url}`;
   }
+}
 
+function normalizePublicationUrl(domain: string): string {
+  const value = domain.trim();
+  if (!value) throw new TypeError("Recommendation publication has an empty domain");
+  if (/^[a-z][a-z\d+.-]*:/i.test(value) && !/^https?:\/\//i.test(value)) {
+    throw new TypeError(`Recommendation publication has an unsupported URL: ${domain}`);
+  }
+  const parsed = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new TypeError(`Recommendation publication has an unsupported URL: ${domain}`);
+  }
+  return `https://${parsed.host}`;
 }
 
 export { Newsletter };
