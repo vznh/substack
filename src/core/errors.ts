@@ -1,9 +1,4 @@
-/**
- * Transport and authentication error types.
- *
- * Error messages deliberately exclude cookie values, headers and response
- * bodies so credential material can never leak into logs or reports.
- */
+/** Errors raised by the SDK transport and cookie authentication. */
 
 /** Raised by the shared transport when a response has an HTTP error status. */
 export class HttpError extends Error {

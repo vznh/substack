@@ -1,4 +1,3 @@
-/** Shared, injectable HTTP transport for the SDK and Auth. */
 import type { Auth } from "./auth.js";
 import { HttpError } from "./errors.js";
 
@@ -17,7 +16,10 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 3;
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 const DEFAULT_HEADERS: Record<string, string> = {
-  "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+    "AppleWebKit/537.36 (KHTML, like Gecko) " +
+    "Chrome/126.0.0.0 Safari/537.36",
   accept: "application/json",
   "content-type": "application/json",
 };
@@ -25,7 +27,7 @@ const DEFAULT_HEADERS: Record<string, string> = {
 let baseFetch: FetchLike = dynamicGlobalFetch;
 
 function dynamicGlobalFetch(url: string | URL, init?: RequestInit): Promise<Response> {
-  return globalThis.fetch(url as Parameters<typeof globalThis.fetch>[0], init);
+  return globalThis.fetch(url, init);
 }
 
 /** Replace the anonymous transport fetch; intended for deterministic tests. */
@@ -41,20 +43,32 @@ function buildHeaders(extra?: RequestInit["headers"]): Headers {
   return headers;
 }
 
-function validateOptions(options: RequestOptions): { timeoutMs: number; retries: number } {
+function validateOptions(
+  options: RequestOptions,
+): { timeoutMs: number; retries: number } {
   const timeoutMs = options.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : options.timeoutMs;
-  if (typeof timeoutMs !== "number" || !Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) {
+  if (
+    typeof timeoutMs !== "number" ||
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs <= 0 ||
+    timeoutMs > 2_147_483_647
+  ) {
     throw new RangeError("timeoutMs must be a positive integer no greater than 2147483647");
   }
   const retries = options.retries === undefined ? 0 : options.retries;
-  if (typeof retries !== "number" || !Number.isSafeInteger(retries) || retries < 0 || retries > MAX_RETRIES) {
+  if (
+    typeof retries !== "number" ||
+    !Number.isSafeInteger(retries) ||
+    retries < 0 ||
+    retries > MAX_RETRIES
+  ) {
     throw new RangeError(`retries must be an integer from 0 to ${MAX_RETRIES}`);
   }
   return { timeoutMs, retries };
 }
 
-function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new Error("The operation was aborted");
+function abortReason(signal?: AbortSignal | null): unknown {
+  return signal?.reason ?? new Error("The operation was aborted");
 }
 
 function throwIfAborted(signal?: AbortSignal | null): void {
@@ -81,24 +95,18 @@ function retryDelayMs(response: Response, attempt: number): number {
 function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
   throwIfAborted(signal);
   return new Promise((resolve, reject) => {
-    let settled = false;
     const cleanup = (): void => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
     };
-    const finish = (callback: () => void): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      callback();
-    };
-    function done(): void {
-      finish(resolve);
-    }
     const onAbort = (): void => {
-      finish(() => reject(abortReason(signal!)));
+      cleanup();
+      reject(abortReason(signal));
     };
-    const timer = setTimeout(done, ms);
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
     if (signal) {
       signal.addEventListener("abort", onAbort, { once: true });
       // Abort may race with listener registration.
@@ -120,7 +128,11 @@ async function cancelBody(response: Response): Promise<void> {
  * Request an absolute URL. Auth readiness is awaited and HTTP errors retain
  * status plus the final response URL. Retries are deliberately opt-in.
  */
-export async function request(url: string, options: RequestOptions = {}, auth?: Auth): Promise<Response> {
+export async function request(
+  url: string,
+  options: RequestOptions = {},
+  auth?: Auth,
+): Promise<Response> {
   throwIfAborted(options.signal);
   if (auth) await auth.ready();
   throwIfAborted(options.signal);
