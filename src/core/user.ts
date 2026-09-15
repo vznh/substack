@@ -1,14 +1,8 @@
-// user
 import { z } from "zod";
 import type { Auth } from "./auth.js";
 import { request, HttpError } from "./http.js";
 
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36";
-
-// Identity fields are essential and strict; everything else is optional raw
-// data preserved via passthrough. Accessors for name/id never depend on
-// unrelated optional fields such as subscriptions.
+// Keep identity strict while preserving optional raw profile fields.
 const UserIdentitySchema = z
   .object({
     id: z.number(),
@@ -33,9 +27,7 @@ const SubscriptionSchema = z
 export type UserData = z.infer<typeof UserIdentitySchema>;
 
 /**
- * Resolve a potentially renamed handle by following the public profile
- * redirect. Bounded to the https://substack.com/@{handle} path; the final
- * URL origin is checked so a redirect is only accepted on substack.com.
+ * Resolve a renamed handle from the final Substack profile URL.
  */
 async function resolve_handle_redirect(
   old_handle: string,
@@ -44,7 +36,7 @@ async function resolve_handle_redirect(
   try {
     const response = await request(
       `https://substack.com/@${encodeURIComponent(old_handle)}`,
-      { redirect: "follow", headers: { "User-Agent": USER_AGENT } },
+      { redirect: "follow" },
       auth
     );
     const final_url = new URL(response.url);
@@ -54,7 +46,6 @@ async function resolve_handle_redirect(
     const new_handle = decodeURIComponent(first_segment.slice(1));
     return new_handle && new_handle !== old_handle ? new_handle : null;
   } catch {
-    // No redirect resolvable (deleted account, network failure, ...).
     return null;
   }
 }
@@ -95,16 +86,8 @@ class User {
     return `User: ${this.username}`;
   }
 
-  private is_cached(): boolean {
-    return this.data !== null;
-  }
-
   private async do_fetch(): Promise<UserData> {
-    const response = await request(
-      this.endpoint,
-      { headers: { "User-Agent": USER_AGENT } },
-      this.auth
-    );
+    const response = await request(this.endpoint, {}, this.auth);
     const json = await response.json();
     const data = UserIdentitySchema.parse(json);
     this.data = data;
@@ -112,18 +95,14 @@ class User {
   }
 
   private async fetch(force_refresh = false): Promise<UserData> {
-    if (!force_refresh && this.is_cached()) return this.data!;
+    if (!force_refresh && this.data !== null) return this.data;
 
-    // Return the same promise, including its rejection, to every concurrent
-    // reader. Retrying after a shared failure hides the original cause and
-    // duplicates requests.
     if (this.inFlight) return this.inFlight;
 
     const p = (async () => {
       try {
         return await this.do_fetch();
       } catch (cause) {
-        // Renamed-handle recovery: a 404 may mean the handle changed.
         if (
           cause instanceof HttpError &&
           cause.status === 404 &&
@@ -138,8 +117,6 @@ class User {
             return await this.do_fetch();
           }
         }
-        // Preserve the original cause instead of replacing it with a
-        // generic message.
         if (cause instanceof HttpError) throw cause;
         throw new Error(`Failed to fetch user: ${this.username}`, { cause });
       }
@@ -154,7 +131,7 @@ class User {
 
   /** Full raw profile data (all API fields), cached like the typed accessors. */
   async get_raw_data(force_refresh = false): Promise<Record<string, unknown>> {
-    return (await this.fetch(force_refresh)) as unknown as Record<string, unknown>;
+    return this.fetch(force_refresh);
   }
 
   async get_id(): Promise<number> {
@@ -176,7 +153,7 @@ class User {
 
   async get_profile_set_up_at(): Promise<string | null> {
     const data = await this.fetch();
-    const value = (data as Record<string, unknown>)["profile_set_up_at"];
+    const value = data["profile_set_up_at"];
     return typeof value === "string" ? value : null;
   }
 
@@ -191,7 +168,7 @@ class User {
       membership_state: string;
     }>
   > {
-    const data = (await this.fetch()) as Record<string, unknown>;
+    const data = await this.fetch();
     const raw = data["subscriptions"];
     if (raw === undefined || raw === null) return [];
 
