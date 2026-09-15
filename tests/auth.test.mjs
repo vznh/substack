@@ -95,6 +95,7 @@ describe("Auth cookie loading and scoping", () => {
   test("respects session, expirationDate, expires, and sameSite none", async () => {
     const path = await cookieFile([
       { name: "session", value: "yes", domain: "substack.com", expirationDate: -1, sameSite: "no_restriction" },
+      { name: "sessionFlag", value: "yes", domain: "substack.com", session: true, expirationDate: 0 },
       { name: "future", value: "yes", domain: "substack.com", expirationDate: Math.floor(Date.now() / 1000) + 3600 },
       { name: "expiredZero", value: "no", domain: "substack.com", expirationDate: 0 },
       { name: "expiredDate", value: "no", domain: "substack.com", expires: "2000-01-01T00:00:00Z" },
@@ -104,6 +105,7 @@ describe("Auth cookie loading and scoping", () => {
     await auth.get("https://substack.com/");
     const cookie = seen.calls[0].headers.get("cookie") ?? "";
     assert.match(cookie, /session=yes/);
+    assert.match(cookie, /sessionFlag=yes/);
     assert.match(cookie, /future=yes/);
     assert.doesNotMatch(cookie, /expiredZero=/);
     assert.doesNotMatch(cookie, /expiredDate=/);
