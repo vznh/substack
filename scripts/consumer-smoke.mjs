@@ -28,7 +28,6 @@ try {
     "set-cookie-parser",
     "tldts",
     "tldts-core",
-    "typescript",
     "@types/node",
     "undici-types",
   ]) {
