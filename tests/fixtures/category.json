@@ -1,0 +1,14 @@
+{
+  "publications": [
+    {
+      "id": 42,
+      "name": "Example Publication",
+      "base_url": "https://example.substack.com",
+      "subdomain": "example",
+      "custom_domain": null,
+      "subscribers": 12,
+      "raw_publication_field": "keep"
+    }
+  ],
+  "more": false
+}

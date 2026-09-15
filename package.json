@@ -24,6 +24,11 @@
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:examples": "tsc -p tsconfig.examples.json",
+    "test": "npm run build && npm run typecheck:examples && node --test tests/*.test.mjs",
+    "test:bun": "npm run build && bun test tests/*.test.mjs",
+    "test:consumer": "npm run build && node scripts/consumer-smoke.mjs",
+    "smoke:live": "node scripts/live-smoke.mjs",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

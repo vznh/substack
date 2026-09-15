@@ -1,0 +1,31 @@
+[
+  {
+    "id": 101,
+    "slug": "hello-world",
+    "title": "Hello world",
+    "canonical_url": "https://example.substack.com/p/hello-world",
+    "publication_id": 42,
+    "subtitle": "A fixture post",
+    "body_html": null,
+    "publish_date": "2026-01-02T03:04:05.000Z",
+    "post_date": "2026-01-02T03:04:05.000Z",
+    "audience": "everyone",
+    "type": "newsletter",
+    "extra_archive_field": true
+  },
+  {
+    "id": 102,
+    "slug": "fixture-episode",
+    "title": "Fixture episode",
+    "canonical_url": "https://example.substack.com/p/fixture-episode",
+    "publication_id": 42,
+    "subtitle": null,
+    "body_html": null,
+    "publish_date": "2026-01-03T03:04:05.000Z",
+    "post_date": "2026-01-03T03:04:05.000Z",
+    "audience": "everyone",
+    "type": "podcast",
+    "podcast_url": "https://cdn.example.org/fixture-episode.mp3",
+    "podcast_upload_id": "00000000-0000-4000-8000-000000000001"
+  }
+]

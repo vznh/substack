@@ -1,0 +1,16 @@
+{
+  "id": 101,
+  "slug": "hello-world",
+  "title": "Hello world",
+  "canonical_url": "https://example.substack.com/p/hello-world",
+  "publication_id": 42,
+  "subtitle": "A fixture post",
+  "body_html": "<p>Hello from the article body.</p>",
+  "publish_date": "2026-01-02T03:04:05.000Z",
+  "post_date": "2026-01-02T03:04:05.000Z",
+  "audience": "everyone",
+  "type": "newsletter",
+  "comment_count": 3,
+  "extra_wire_field": "preserve me",
+  "extra_wire_object": { "source": "fixture" }
+}

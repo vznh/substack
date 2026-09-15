@@ -1,0 +1,18 @@
+{
+  "id": 7,
+  "name": "Fixture User",
+  "profile_set_up_at": "2025-12-01T00:00:00.000Z",
+  "raw_profile_field": "preserve me",
+  "subscriptions": [
+    {
+      "membership_state": "subscribed",
+      "publication": {
+        "id": 42,
+        "name": "Example Publication",
+        "subdomain": "example",
+        "custom_domain": null,
+        "raw_publication_field": 123
+      }
+    }
+  ]
+}
